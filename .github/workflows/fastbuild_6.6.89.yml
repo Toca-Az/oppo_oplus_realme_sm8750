@@ -287,6 +287,15 @@ jobs:
             echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
           fi
 
+      - name: 补全一加平板私有磁吸皮套核心及霍尔芯片驱动
+        run: |
+          cd kernel_workspace
+          # 1. 强行灌入一加平板 magnetic_cover 核心抽象层开关
+            echo "CONFIG_OPLUS_MAGCVR_CORE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          # 2. 强行灌入对应的美信及旭化成霍尔芯片具体驱动
+            echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> ./common/arch/arm64/configs/gki_defconfig
+
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
         run: |
