@@ -296,7 +296,7 @@ jobs:
           mkdir -p $LOCAL_DIR
         
           # 2. 从一加官方 OSS 仓库单文件抓取源码
-          RAW_URL="https://raw.githubusercontent.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/refs/heads/oneplus/sm8750_b_16.0.0_oneplus_13/vendor/oplus/kernel/device_info/magnetic_cover"
+          RAW_URL="https://raw.githubusercontent.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/tree/oneplus/sm8750_b_16.0.0_oneplus_13/vendor/oplus/kernel/device_info/magnetic_cover"
         
           echo "正在从一加OSS拉取皮套驱动源码..."
           wget -q "${RAW_URL}/magnetic_cover_core.c" -O "${LOCAL_DIR}/magnetic_cover_core.c"
