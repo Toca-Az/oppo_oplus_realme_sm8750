@@ -295,14 +295,13 @@ jobs:
           echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> ./common/arch/arm64/configs/gki_defconfig
 
-      - name: 逆天改命：强行硬编码注入 I2C 磁吸皮套设备节点
+      - name: 强行硬编码注入 I2C 磁吸皮套设备节点
         run: |
           cd kernel_workspace
-          # 2. 精准定位驱动代码的相对路径
+          # 2. 精准定位驱动代码相对路径
           TARGET_FILE="./vendor/oplus/kernel/device_info/magnetic_cover/oplus_magcvr_mxm1120.c"
         
           # 3. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
-          # 这样无论在哪个 I2C 总线上，内核开机都会强行去 probe 探测该芯片
           sed -i '/magcvr_mxm1120_init/!b;n;a\
           struct i2c_adapter *adapter;\
           struct i2c_board_info info = { I2C_BOARD_INFO("oplus,magcvr_mxm1120", 0x10) };\
