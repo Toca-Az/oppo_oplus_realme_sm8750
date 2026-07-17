@@ -287,49 +287,59 @@ jobs:
             echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
           fi
 
-      - name: 克隆一加私有外设驱动模块仓库
+      - name: 跨仓库强行移植一加平板磁吸皮套驱动
         run: |
           cd kernel_workspace
-          # 请将下面的 https://github.com/xxxx/xxxx.git 替换为你实际浏览源码的那个仓库真实地址！
-          # 后面保持克隆到指定的 vendor/oplus 路径下
-          git clone --depth=1 https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/tree/oneplus/sm8750_b_16.0.0_oneplus_13.git ./vendor/oplus
+        
+          # 1. 创建存放驱动的本地目录
+          LOCAL_DIR="./vendor/oplus/kernel/device_info/magnetic_cover"
+          mkdir -p $LOCAL_DIR
+        
+          # 2. 从一加官方 OSS 仓库单文件抓取源码
+          RAW_URL="https://raw.githubusercontent.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/refs/heads/oneplus/sm8750_b_16.0.0_oneplus_13/vendor/oplus/kernel/device_info/magnetic_cover"
+        
+          echo "正在从一加OSS拉取皮套驱动源码..."
+          wget -q "${RAW_URL}/magnetic_cover_core.c" -O "${LOCAL_DIR}/magnetic_cover_core.c"
+          wget -q "${RAW_URL}/magnetic_cover.h" -O "${LOCAL_DIR}/magnetic_cover.h"
+          wget -q "${RAW_URL}/oplus_magcvr_mxm1120.c" -O "${LOCAL_DIR}/oplus_magcvr_mxm1120.c"
+          wget -q "${RAW_URL}/Makefile" -O "${LOCAL_DIR}/Makefile"
+          wget -q "${RAW_URL}/Kconfig" -O "${LOCAL_DIR}/Kconfig"
 
-      - name: 补全一加平板私有磁吸皮套核心及霍尔芯片驱动
+      - name: 逆天改命：对刚下载的源码硬编码注入 I2C 节点
+        run: |
+          cd kernel_workspace
+          TARGET_FILE="./vendor/oplus/kernel/device_info/magnetic_cover/oplus_magcvr_mxm1120.c"
+        
+          if [ -f "$TARGET_FILE" ]; then
+              echo "🎯 驱动文件存在，开始硬编码注入 I2C 节点..."
+              sed -i '/magcvr_mxm1120_init/!b;n;a\
+              struct i2c_adapter *adapter;\
+              struct i2c_board_info info = { I2C_BOARD_INFO("oplus,magcvr_mxm1120", 0x10) };\
+              int i;\
+              for (i = 0; i < 24; i++) {\
+                  adapter = i2c_get_adapter(i);\
+                  if (adapter) {\
+                      i2c_new_client_device(adapter, &info);\
+                      i2c_put_adapter(adapter);\
+                  }\
+              }' "$TARGET_FILE"
+          else
+              echo "❌ 错误：未找到下载的文件，无法注入！"
+              exit 1
+          fi
+
+      - name: 补全内核宏开关并挂载编译树
         run: |
           cd kernel_workspace
           # 1. 强行灌入一加平板 magnetic_cover 核心配置到 defconfig
           echo "CONFIG_OPLUS_MAGCVR_CORE=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> ./common/arch/arm64/configs/gki_defconfig
-
-      - name: 逆天改命：强行硬编码注入 I2C 磁吸皮套设备节点
-        run: |
-          # 1. 回到 GitHub Actions 的工作流根目录，确保能搜到所有克隆下来的仓库
-          cd $GITHUB_WORKSPACE
         
-          # 2. 全盘搜索该驱动文件并自动赋值给 TARGET_FILE
-          TARGET_FILE=$(find . -name "oplus_magcvr_mxm1120.c" | head -n 1)
-        
-          if [ -z "$TARGET_FILE" ]; then
-              echo "❌ 错误：在所有克隆的源码中都找不到 oplus_magcvr_mxm1120.c，请检查 vendor 仓库是否已拉取！"
-              exit 1
-          else
-              echo "🎯 成功找到驱动文件，路径为: $TARGET_FILE"
-          fi
-        
-          # 3. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
-          sed -i '/magcvr_mxm1120_init/!b;n;a\
-          struct i2c_adapter *adapter;\
-          struct i2c_board_info info = { I2C_BOARD_INFO("oplus,magcvr_mxm1120", 0x10) };\
-          int i;\
-          for (i = 0; i < 24; i++) {\
-              adapter = i2c_get_adapter(i);\
-              if (adapter) {\
-                  i2c_new_client_device(adapter, &info);\
-                  i2c_put_adapter(adapter);\
-              }\
-          }' "$TARGET_FILE"
-
+          # 2. 让上级目录的 Makefile 能够索引到新创建的这个驱动文件夹
+          mkdir -p ./vendor/oplus/kernel/device_info
+          echo "obj-y += magnetic_cover/" >> ./vendor/oplus/kernel/device_info/Makefile
+          
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
         run: |
