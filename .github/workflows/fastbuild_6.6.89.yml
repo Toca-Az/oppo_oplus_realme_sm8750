@@ -295,11 +295,20 @@ jobs:
           echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> ./common/arch/arm64/configs/gki_defconfig
 
-      - name: 强行硬编码注入 I2C 磁吸皮套设备节点
+      - name: 逆天改命：强行硬编码注入 I2C 磁吸皮套设备节点
         run: |
-          cd kernel_workspace
-          # 2. 精准定位驱动代码相对路径
-          TARGET_FILE="./vendor/oplus/kernel/device_info/magnetic_cover/oplus_magcvr_mxm1120.c"
+          # 1. 回到 GitHub Actions 的工作流根目录，确保能搜到所有克隆下来的仓库
+          cd $GITHUB_WORKSPACE
+        
+          # 2. 全盘搜索该驱动文件并自动赋值给 TARGET_FILE
+          TARGET_FILE=$(find . -name "oplus_magcvr_mxm1120.c" | head -n 1)
+        
+          if [ -z "$TARGET_FILE" ]; then
+              echo "❌ 错误：在所有克隆的源码中都找不到 oplus_magcvr_mxm1120.c，请检查 vendor 仓库是否已拉取！"
+              exit 1
+          else
+              echo "🎯 成功找到驱动文件，路径为: $TARGET_FILE"
+          fi
         
           # 3. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
           sed -i '/magcvr_mxm1120_init/!b;n;a\
@@ -312,7 +321,7 @@ jobs:
                   i2c_new_client_device(adapter, &info);\
                   i2c_put_adapter(adapter);\
               }\
-          }' $TARGET_FILE
+          }' "$TARGET_FILE"
 
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
