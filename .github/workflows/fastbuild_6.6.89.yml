@@ -287,6 +287,13 @@ jobs:
             echo "已选择无内置KernelSU模式，跳过KernelSU配置..."
           fi
 
+      - name: 克隆一加私有外设驱动模块仓库
+        run: |
+          cd kernel_workspace
+          # 请将下面的 https://github.com/xxxx/xxxx.git 替换为你实际浏览源码的那个仓库真实地址！
+          # 后面保持克隆到指定的 vendor/oplus 路径下
+          git clone --depth=1 https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/tree/oneplus/sm8750_b_16.0.0_oneplus_13.git ./vendor/oplus
+
       - name: 补全一加平板私有磁吸皮套核心及霍尔芯片驱动
         run: |
           cd kernel_workspace
