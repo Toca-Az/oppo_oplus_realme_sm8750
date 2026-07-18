@@ -310,10 +310,19 @@ jobs:
       - name: 逆天改命：对刚下载的源码硬编码注入 I2C 节点
         run: |
           cd kernel_workspace
-          TARGET_FILE="./vendor/oplus/kernel/device_info/magnetic_cover/oplus_magcvr_mxm1120.c"
         
-          if [ -f "$TARGET_FILE" ]; then
-              echo "🎯 驱动文件存在，开始硬编码注入 I2C 节点..."
+          # 1. 在刚刚移植好的目录下，动态搜索该驱动源文件（不限制死在根目录）
+          TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "oplus_magcvr_mxm1120.c" | head -n 1)
+        
+          # 2. 如果没搜到精准的，放宽条件模糊搜索任何包含 mxm1120 的 .c 文件
+          if [ -z "$TARGET_FILE" ]; then
+              TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "*mxm1120*.c" | head -n 1)
+          fi
+        
+          if [ -n "$TARGET_FILE" ] && [ -f "$TARGET_FILE" ]; then
+              echo "🎯 成功动态定位到驱动文件: $TARGET_FILE"
+            
+              # 3. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
               sed -i '/magcvr_mxm1120_init/!b;n;a\
               struct i2c_adapter *adapter;\
               struct i2c_board_info info = { I2C_BOARD_INFO("oplus,magcvr_mxm1120", 0x10) };\
@@ -325,8 +334,12 @@ jobs:
                       i2c_put_adapter(adapter);\
                   }\
               }' "$TARGET_FILE"
+            
+              echo "✅ 硬编码 I2C 节点注入成功！"
           else
-              echo "❌ 错误：未找到下载的文件，无法注入！"
+              echo "❌ 严重错误：在移植过来的驱动目录中，无法找到包含 mxm1120 的驱动源码！"
+              echo "当前移植目录下的文件结构如下（打印出来看看到底长啥样）："
+              ls -R ./vendor/oplus/kernel/device_info/magnetic_cover
               exit 1
           fi
 
