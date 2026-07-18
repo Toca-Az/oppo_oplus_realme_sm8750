@@ -291,19 +291,21 @@ jobs:
         run: |
           cd kernel_workspace
         
-          # 1. 创建存放驱动的本地目录
+          # 1. 临时建一个平级目录，把一加的整个大仓库拉下来（只拉最新一次提交，速度很快）
+          echo "正在克隆一加官方外设驱动仓库..."
+          git clone --depth=1 -b oneplus/sm8750_b_16.0.0_oneplus_13 https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750.git ./oneplus_tmp_repo
+        
+          # 2. 创建你本地内核项目的目标存放路径
           LOCAL_DIR="./vendor/oplus/kernel/device_info/magnetic_cover"
-          mkdir -p $LOCAL_DIR
+          mkdir -p "$LOCAL_DIR"
         
-          # 2. 从一加官方 OSS 仓库单文件抓取源码
-          RAW_URL="https://raw.githubusercontent.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/oneplus/sm8750_b_16.0.0_oneplus_13/vendor/oplus/kernel/device_info/magnetic_cover"
+          # 3. 从拉下来的临时仓库里，精准把皮套驱动的源文件拷贝到你的内核目录中
+          echo "正在复制磁吸皮套核心驱动源文件..."
+          cp -r ./oneplus_tmp_repo/vendor/oplus/kernel/device_info/magnetic_cover/* "$LOCAL_DIR/"
         
-          echo "正在从一加OSS拉取皮套驱动源码..."
-          wget -q "${RAW_URL}/magnetic_cover_core.c" -O "${LOCAL_DIR}/magnetic_cover_core.c"
-          wget -q "${RAW_URL}/magnetic_cover.h" -O "${LOCAL_DIR}/magnetic_cover.h"
-          wget -q "${RAW_URL}/oplus_magcvr_mxm1120.c" -O "${LOCAL_DIR}/oplus_magcvr_mxm1120.c"
-          wget -q "${RAW_URL}/Makefile" -O "${LOCAL_DIR}/Makefile"
-          wget -q "${RAW_URL}/Kconfig" -O "${LOCAL_DIR}/Kconfig"
+          # 4. 打完收工，过河拆桥删掉临时仓库，保持工作区干净
+          rm -rf ./oneplus_tmp_repo
+          echo "✅ 驱动源码无损移植成功！"
 
       - name: 逆天改命：对刚下载的源码硬编码注入 I2C 节点
         run: |
