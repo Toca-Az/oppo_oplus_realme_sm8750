@@ -307,42 +307,27 @@ jobs:
           rm -rf ./oneplus_tmp_repo
           echo "✅ 驱动源码无损移植成功！"
 
-      - name: 逆天改命：对刚下载的源码硬编码注入 I2C 节点
+      - name: 回归正统底层：向平板设备树（DTS）注入标准外设节点
         run: |
           cd kernel_workspace
           
-          # 1. 动态搜索该驱动源文件
-          TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "magcvr_mxm1120.c" -o -name "oplus_magcvr_mxm1120.c" | head -n 1)
+          # 1. 动态寻找一加平板主外设或对应的 DTSI 设备树文件
+          TARGET_DTSI=$(find ./arch/arm64/boot/dts/vendor/ -name "*tablet*.dtsi" -o -name "*oplus*.dtsi" | head -n 1)
           
-          if [ -z "$TARGET_FILE" ]; then
-              TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "*mxm1120*.c" | head -n 1)
+          if [ -z "$TARGET_DTSI" ]; then
+              TARGET_DTSI=$(find ./arch/arm64/boot/dts/vendor/ -name "*.dtsi" | head -n 1)
           fi
           
-          if [ -n "$TARGET_FILE" ] && [ -f "$TARGET_FILE" ]; then
-              echo "🎯 成功动态定位到驱动文件: $TARGET_FILE"
+          if [ -n "$TARGET_DTSI" ] && [ -f "$TARGET_DTSI" ]; then
+              echo "🎯 成功定位到目标外设设备树: $TARGET_DTSI"
               
-              # 2. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
-              # 修正点：1. 芯片名改为与驱动 id_table 像素级一致的 "oplus_magcvr_mxm1120"
-              # 修正点：2. 物理地址修正为 mxm1120 标称的 0x30
-              # 修正点：3. 修复 i2c_put_adapter 的释放时机，防止开机卡死
-              sed -i '/magcvr_mxm1120_init/!b;n;a\
-              struct i2c_adapter *adapter;\
-              struct i2c_board_info info = { I2C_BOARD_INFO("oplus_magcvr_mxm1120", 0x30) };\
-              int i;\
-              for (i = 0; i < 24; i++) {\
-                  adapter = i2c_get_adapter(i);\
-                  if (adapter) {\
-                      struct i2c_client *client = i2c_new_client_device(adapter, &info);\
-                      if (!client) {\
-                          i2c_put_adapter(adapter);\
-                      }\
-                  }\
-              }' "$TARGET_FILE"
+              # 2. 改用极其安全的 printf 单行拼接，彻底杜绝 EOF 缩进和花括号错乱问题
+              # ⚠️ 注意：其中的 i2c_x 的 x 以及 interrupts 中的 85 记得对齐原厂！
+              printf "\n&i2c_x {\n    status = \"okay\";\n    magnetic_cover_mxm1120@30 {\n        compatible = \"oplus,magcvr_mxm1120\";\n        reg = <0x30>;\n        interrupt-parent = <&tlmm>;\n        interrupts = <85 4>;\n        status = \"okay\";\n    };\n};\n" >> "$TARGET_DTSI"
               
-              echo "✅ 硬编码 I2C 节点注入与安全修复成功！"
+              echo "✅ 标准 I2C 设备树节点注入成功！"
           else
-              echo "❌ 严重错误：在移植过来的驱动目录中，无法找到包含 mxm1120 的驱动源码！"
-              ls -R ./vendor/oplus/kernel/device_info/magnetic_cover
+              echo "❌ 严重错误：无法在源码仓库中找到任何可供注入的设备树文件！"
               exit 1
           fi
 
@@ -350,8 +335,7 @@ jobs:
         run: |
           cd kernel_workspace
           
-          # 1. 强行灌入一加平板 magnetic_cover 核心配置到 defconfig
-          # 注意：请根据你实际编译使用的 defconfig 名字调整（如厂商特定的 oplus_defconfig）
+          # 1. 强行灌入一加平板 magnetic_cover 核心配置到你的 defconfig 开关中
           DEFCONFIG_PATH="./common/arch/arm64/configs/gki_defconfig"
           if [ ! -f "$DEFCONFIG_PATH" ]; then
               DEFCONFIG_PATH=$(find ./arch/arm64/configs/ -name "*defconfig" | head -n 1)
@@ -362,20 +346,18 @@ jobs:
           echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> "$DEFCONFIG_PATH"
           echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> "$DEFCONFIG_PATH"
           
-          # 2. 让上级目录的 Makefile 能够索引到新创建的这个驱动文件夹
-          # 如果上层 Makefile 已经存在，我们追加进去；如果不存在，则创建它
+          # 2. 让上级目录的 Makefile 能够成功索引到新创建的这个驱动文件夹
           UPSTREAM_MAKEFILE="./vendor/oplus/kernel/device_info/Makefile"
           mkdir -p ./vendor/oplus/kernel/device_info
           
           if [ -f "$UPSTREAM_MAKEFILE" ]; then
-              # 防止重复追加
               if ! grep -q "magnetic_cover/" "$UPSTREAM_MAKEFILE"; then
                   echo "obj-y += magnetic_cover/" >> "$UPSTREAM_MAKEFILE"
               fi
           else
               echo "obj-y += magnetic_cover/" > "$UPSTREAM_MAKEFILE"
           fi
-          echo "✅ 编译树节点挂载成功！"
+          echo "✅ 编译树构建链路打通成功！"
           
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
