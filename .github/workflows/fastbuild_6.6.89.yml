@@ -290,19 +290,19 @@ jobs:
       - name: 跨仓库强行移植一加平板磁吸皮套驱动
         run: |
           cd kernel_workspace
-        
+          
           # 1. 临时建一个平级目录，把一加的整个大仓库拉下来（只拉最新一次提交，速度很快）
           echo "正在克隆一加官方外设驱动仓库..."
           git clone --depth=1 -b oneplus/sm8750_b_16.0.0_oneplus_13 https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750.git ./oneplus_tmp_repo
-        
+          
           # 2. 创建你本地内核项目的目标存放路径
           LOCAL_DIR="./vendor/oplus/kernel/device_info/magnetic_cover"
           mkdir -p "$LOCAL_DIR"
-        
+          
           # 3. 从拉下来的临时仓库里，精准把皮套驱动的源文件拷贝到你的内核目录中
           echo "正在复制磁吸皮套核心驱动源文件..."
           cp -r ./oneplus_tmp_repo/vendor/oplus/kernel/device_info/magnetic_cover/* "$LOCAL_DIR/"
-        
+          
           # 4. 打完收工，过河拆桥删掉临时仓库，保持工作区干净
           rm -rf ./oneplus_tmp_repo
           echo "✅ 驱动源码无损移植成功！"
@@ -310,35 +310,38 @@ jobs:
       - name: 逆天改命：对刚下载的源码硬编码注入 I2C 节点
         run: |
           cd kernel_workspace
-        
-          # 1. 在刚刚移植好的目录下，动态搜索该驱动源文件（不限制死在根目录）
-          TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "oplus_magcvr_mxm1120.c" | head -n 1)
-        
-          # 2. 如果没搜到精准的，放宽条件模糊搜索任何包含 mxm1120 的 .c 文件
+          
+          # 1. 动态搜索该驱动源文件
+          TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "magcvr_mxm1120.c" -o -name "oplus_magcvr_mxm1120.c" | head -n 1)
+          
           if [ -z "$TARGET_FILE" ]; then
               TARGET_FILE=$(find ./vendor/oplus/kernel/device_info/magnetic_cover -name "*mxm1120*.c" | head -n 1)
           fi
-        
+          
           if [ -n "$TARGET_FILE" ] && [ -f "$TARGET_FILE" ]; then
               echo "🎯 成功动态定位到驱动文件: $TARGET_FILE"
-            
-              # 3. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
+              
+              # 2. 强行在驱动的 module_init 入口处注入循环注册 I2C 的硬编码逻辑
+              # 修正点：1. 芯片名改为与驱动 id_table 像素级一致的 "oplus_magcvr_mxm1120"
+              # 修正点：2. 物理地址修正为 mxm1120 标称的 0x30
+              # 修正点：3. 修复 i2c_put_adapter 的释放时机，防止开机卡死
               sed -i '/magcvr_mxm1120_init/!b;n;a\
               struct i2c_adapter *adapter;\
-              struct i2c_board_info info = { I2C_BOARD_INFO("oplus,magcvr_mxm1120", 0x10) };\
+              struct i2c_board_info info = { I2C_BOARD_INFO("oplus_magcvr_mxm1120", 0x30) };\
               int i;\
               for (i = 0; i < 24; i++) {\
                   adapter = i2c_get_adapter(i);\
                   if (adapter) {\
-                      i2c_new_client_device(adapter, &info);\
-                      i2c_put_adapter(adapter);\
+                      struct i2c_client *client = i2c_new_client_device(adapter, &info);\
+                      if (!client) {\
+                          i2c_put_adapter(adapter);\
+                      }\
                   }\
               }' "$TARGET_FILE"
-            
-              echo "✅ 硬编码 I2C 节点注入成功！"
+              
+              echo "✅ 硬编码 I2C 节点注入与安全修复成功！"
           else
               echo "❌ 严重错误：在移植过来的驱动目录中，无法找到包含 mxm1120 的驱动源码！"
-              echo "当前移植目录下的文件结构如下（打印出来看看到底长啥样）："
               ls -R ./vendor/oplus/kernel/device_info/magnetic_cover
               exit 1
           fi
@@ -346,14 +349,33 @@ jobs:
       - name: 补全内核宏开关并挂载编译树
         run: |
           cd kernel_workspace
+          
           # 1. 强行灌入一加平板 magnetic_cover 核心配置到 defconfig
-          echo "CONFIG_OPLUS_MAGCVR_CORE=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> ./common/arch/arm64/configs/gki_defconfig
-        
+          # 注意：请根据你实际编译使用的 defconfig 名字调整（如厂商特定的 oplus_defconfig）
+          DEFCONFIG_PATH="./common/arch/arm64/configs/gki_defconfig"
+          if [ ! -f "$DEFCONFIG_PATH" ]; then
+              DEFCONFIG_PATH=$(find ./arch/arm64/configs/ -name "*defconfig" | head -n 1)
+          fi
+          echo "🎯 目标配置文件: $DEFCONFIG_PATH"
+          
+          echo "CONFIG_OPLUS_MAGCVR_CORE=y" >> "$DEFCONFIG_PATH"
+          echo "CONFIG_OPLUS_MAGCVR_MXM1120=y" >> "$DEFCONFIG_PATH"
+          echo "CONFIG_OPLUS_MAGCVR_AK09973=y" >> "$DEFCONFIG_PATH"
+          
           # 2. 让上级目录的 Makefile 能够索引到新创建的这个驱动文件夹
+          # 如果上层 Makefile 已经存在，我们追加进去；如果不存在，则创建它
+          UPSTREAM_MAKEFILE="./vendor/oplus/kernel/device_info/Makefile"
           mkdir -p ./vendor/oplus/kernel/device_info
-          echo "obj-y += magnetic_cover/" >> ./vendor/oplus/kernel/device_info/Makefile
+          
+          if [ -f "$UPSTREAM_MAKEFILE" ]; then
+              # 防止重复追加
+              if ! grep -q "magnetic_cover/" "$UPSTREAM_MAKEFILE"; then
+                  echo "obj-y += magnetic_cover/" >> "$UPSTREAM_MAKEFILE"
+              fi
+          else
+              echo "obj-y += magnetic_cover/" > "$UPSTREAM_MAKEFILE"
+          fi
+          echo "✅ 编译树节点挂载成功！"
           
       - name: 应用 KernelSU & SUSFS 补丁
         if: inputs.susfs_enable
