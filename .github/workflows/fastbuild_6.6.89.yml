@@ -311,23 +311,31 @@ jobs:
         run: |
           cd kernel_workspace
           
-          # 1. 动态寻找一加平板主外设或对应的 DTSI 设备树文件
-          TARGET_DTSI=$(find ./arch/arm64/boot/dts/vendor/ -name "*tablet*.dtsi" -o -name "*oplus*.dtsi" | head -n 1)
+          # 1. 扩大搜索范围，在整个工作区全局寻找包含 tablet 或 oplus 关键字的 dtsi 文件
+          TARGET_DTSI=$(find . -name "*tablet*.dtsi" -o -name "*oplus*.dtsi" | grep -v "oneplus_tmp_repo" | head -n 1)
           
+          # 2. 如果上面没捞到，放宽条件，寻找任何非临时目录下的主板级 dtsi 文件
           if [ -z "$TARGET_DTSI" ]; then
-              TARGET_DTSI=$(find ./arch/arm64/boot/dts/vendor/ -name "*.dtsi" | head -n 1)
+              TARGET_DTSI=$(find . -name "*.dtsi" | grep -v "oneplus_tmp_repo" | grep -v "common/" | head -n 1)
+          fi
+          
+          # 3. 如果还是没有，兜底选择找到的第一个 dtsi 
+          if [ -z "$TARGET_DTSI" ]; then
+              TARGET_DTSI=$(find . -name "*.dtsi" | grep -v "oneplus_tmp_repo" | head -n 1)
           fi
           
           if [ -n "$TARGET_DTSI" ] && [ -f "$TARGET_DTSI" ]; then
-              echo "🎯 成功定位到目标外设设备树: $TARGET_DTSI"
+              echo "🎯 全局动态定位到目标设备树文件: $TARGET_DTSI"
               
-              # 2. 改用极其安全的 printf 单行拼接，彻底杜绝 EOF 缩进和花括号错乱问题
+              # 4. 使用安全的 printf 注入节点
               # ⚠️ 注意：其中的 i2c_x 的 x 以及 interrupts 中的 85 记得对齐原厂！
               printf "\n&i2c_x {\n    status = \"okay\";\n    magnetic_cover_mxm1120@30 {\n        compatible = \"oplus,magcvr_mxm1120\";\n        reg = <0x30>;\n        interrupt-parent = <&tlmm>;\n        interrupts = <85 4>;\n        status = \"okay\";\n    };\n};\n" >> "$TARGET_DTSI"
               
               echo "✅ 标准 I2C 设备树节点注入成功！"
           else
-              echo "❌ 严重错误：无法在源码仓库中找到任何可供注入的设备树文件！"
+              echo "❌ 严重错误：全局搜索后仍无法在源码仓库中找到任何可供注入的设备树（.dtsi）文件！"
+              echo "当前目录结构前三层如下，帮我看看设备树藏在哪了："
+              find . -maxdepth 3
               exit 1
           fi
 
