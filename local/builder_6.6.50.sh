@@ -11,6 +11,7 @@ echo ">>> 读取用户配置..."
 MANIFEST=${MANIFEST:-oppo+oplus+realme}
 read -p "请输入自定义内核后缀（默认：android15-8-g29d86c5fc9dd-abogki428889875-4k）: " CUSTOM_SUFFIX
 CUSTOM_SUFFIX=${CUSTOM_SUFFIX:-android15-8-g29d86c5fc9dd-abogki428889875-4k}
+CUSTOM_SUFFIX=${CUSTOM_SUFFIX#-}
 read -p "是否启用susfs？(y/n，默认：y): " APPLY_SUSFS
 APPLY_SUSFS=${APPLY_SUSFS:-y}
 read -p "是否启用 KPM？(y-启用 KpatchNext独立kpm实现, n-关闭kpm，默认：n): " USE_PATCH_LINUX
@@ -316,9 +317,11 @@ if [[ "$APPLY_DROIDSPACES" == [sSeE] ]]; then
   echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> "$DEFCONFIG_FILE"
+  # Enable Macvlan virtual network support (Safe, required for --net=macvlan)
   echo "CONFIG_MACVLAN=y" >> "$DEFCONFIG_FILE"
-  echo "CONFIG_CFS_BANDWIDTH=y" >> "$DEFCONFIG_FILE"
-  echo "CONFIG_CGROUP_PIDS=y" >> "$DEFCONFIG_FILE"
+  # CFS_BANDWIDTH and CGROUP_PIDS break GKI KABI and Qualcomm WALT scheduler, causing bootloop. Disabled for safety.
+  #echo "CONFIG_CFS_BANDWIDTH=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_CGROUP_PIDS=y" >> "$DEFCONFIG_FILE"
   # 开启 NTSync
   echo "CONFIG_NTSYNC=y" >> "$DEFCONFIG_FILE"
   cd common
